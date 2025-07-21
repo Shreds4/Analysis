@@ -138,7 +138,6 @@ if uploaded_file is not None:
         cuts = [int(c.strip()) for c in cuts_input.split(',') if c.strip().isdigit()]
         auc_tbls, auc_sum_df, amp_df, meta_df, intervals = analyse_intervals(analysis_df, cuts)
 
-        # Interval labels and mapping
         interval_labels = [f"Interval {i+1}: {a}–{b}" for i, (a, b) in enumerate(intervals)]
         idx_map = {lbl: i for i, lbl in enumerate(interval_labels)}
 
@@ -153,7 +152,6 @@ if uploaded_file is not None:
             denominator_interval = st.sidebar.selectbox(
                 "Denominator Interval", interval_labels, index=1)
 
-        # Compute max ratios and flagged columns
         max_ratio_df = pd.DataFrame()
         a_auc_df = pd.DataFrame()
         a_amp_df = pd.DataFrame()
@@ -175,30 +173,24 @@ if uploaded_file is not None:
                 })
 
                 flagged_cols = ratio[mask].index.tolist()
-               if flagged_cols:
+                if flagged_cols:
                     sub_df = analysis_df[[analysis_df.columns[0]] + flagged_cols]
                     _, a_auc_df, a_amp_df, a_meta_df, _ = analyse_intervals(sub_df, cuts)
-
-                    # Compute average per-minute AUC and amplitude per interval
-                    a_auc_per_min_df = a_meta_df[['Average_AUC_per_min']].copy()
-                    a_amp_per_min_df = a_meta_df[['Avg_Amplitude_per_min']].copy()
-
+                    a_auc_per_min_df = a_meta_df[['Average_AUC_per_min']]
+                    a_amp_per_min_df = a_meta_df[['Avg_Amplitude_per_min']]
             except Exception as e:
                 st.error(f"Interval ratio error: {e}")
 
         st.success("✅ Analysis complete!")
 
-        # Build Excel export
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-            # Raw data
             if analysis_mode == 'Single File Analysis':
                 df_raw.to_excel(writer, sheet_name="Processed_Data", startrow=1, index=False)
             else:
                 df1.to_excel(writer, sheet_name="Raw_Data", startrow=1, index=False)
                 df2.to_excel(writer, sheet_name="Raw_Data", startrow=len(df1)+3, index=False)
 
-            # Main results
             ws = writer.book.add_worksheet("Processed_Data")
             writer.sheets["Processed_Data"] = ws
             r = 0
@@ -206,7 +198,6 @@ if uploaded_file is not None:
             analysis_df.to_excel(writer, sheet_name="Processed_Data", startrow=r, index=False)
             r += len(analysis_df) + 2
 
-            # Max ratio table
             if not max_ratio_df.empty:
                 ws.write(r, 0, f"Max Ratio Table: {numerator_interval} ÷ {denominator_interval}"); r += 1
                 max_ratio_df.to_excel(writer, sheet_name="Processed_Data", startrow=r, index=True)
@@ -216,13 +207,11 @@ if uploaded_file is not None:
                                       {'type': 'cell', 'criteria': '>', 'value': threshold, 'format': fmt})
                 r += len(max_ratio_df) + 2
 
-            # Write original interval AUC & amplitude
             for idx, (tag, auc_df_int) in enumerate(auc_tbls.items(), start=1):
                 ws.write(r, 0, f"AUC Data - Interval {idx} ({tag})"); r += 1
                 auc_df_int.rename(columns={'Time Start': 'Time'}).drop(columns=['Time End'], errors='ignore') \
                           .to_excel(writer, sheet_name="Processed_Data", startrow=r, index=False)
                 r += len(auc_df_int) + 2
-                # AUC sums
                 ws.write(r, 0, f"AUC Sums - Interval {idx}"); r += 1
                 auc_sum_df.loc[tag:tag].to_excel(writer, sheet_name="Processed_Data", startrow=r)
                 r += 2
@@ -230,7 +219,6 @@ if uploaded_file is not None:
                 ws.write(r, 0, meta_df.loc[tag, 'Average_AUC']); r += 2
                 ws.write(r, 0, f"AUC per Minute - Interval {idx}"); r += 1
                 ws.write(r, 0, meta_df.loc[tag, 'Average_AUC_per_min']); r += 2
-                # Amplitude
                 ws.write(r, 0, f"Amplitude - Interval {idx}"); r += 1
                 amp_df.loc[tag:tag].to_excel(writer, sheet_name="Processed_Data", startrow=r)
                 r += len(amp_df.loc[tag:tag]) + 2
@@ -239,7 +227,6 @@ if uploaded_file is not None:
                 ws.write(r, 0, f"Amp per Minute - Interval {idx}"); r += 1
                 ws.write(r, 0, meta_df.loc[tag, 'Avg_Amplitude_per_min']); r += 2
 
-            # A‑Cell sections
             if not a_auc_df.empty:
                 r += 2
                 ws.write(r, 0, "A‑Cell AUC Data"); r += 1
@@ -260,4 +247,4 @@ if uploaded_file is not None:
 
     except Exception as e:
         st.error(f"⛔ Error: {e}")
-        st.warning("Double check your uploads, time cuts, and interval selections.")
+        st.warning("Double check
