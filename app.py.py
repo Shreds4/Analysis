@@ -247,4 +247,4 @@ if uploaded_file is not None:
 
     except Exception as e:
         st.error(f"⛔ Error: {e}")
-        st.warning("Double check
+        st.warning("Double check your uploads, time cuts, and interval selections.")
