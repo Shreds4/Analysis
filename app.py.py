@@ -175,17 +175,13 @@ if uploaded_file is not None:
                 })
 
                 flagged_cols = ratio[mask].index.tolist()
-                if flagged_cols:
+               if flagged_cols:
                     sub_df = analysis_df[[analysis_df.columns[0]] + flagged_cols]
-                    _, a_auc_df, a_amp_df, _, _ = analyse_intervals(sub_df, cuts)
+                    _, a_auc_df, a_amp_df, a_meta_df, _ = analyse_intervals(sub_df, cuts)
 
-                    # Compute per-minute stats
-                    interval_minutes = {
-                        f"Interval {i+1}: {start}–{end}": (end - start) / 60
-                        for i, (start, end) in enumerate(intervals)
-                    }
-                    a_auc_per_min_df = a_auc_df.div([interval_minutes[idx] for idx in a_auc_df.index], axis=0)
-                    a_amp_per_min_df = a_amp_df.div([interval_minutes[idx] for idx in a_amp_df.index], axis=0)
+                    # Compute average per-minute AUC and amplitude per interval
+                    a_auc_per_min_df = a_meta_df[['Average_AUC_per_min']].copy()
+                    a_amp_per_min_df = a_meta_df[['Avg_Amplitude_per_min']].copy()
 
             except Exception as e:
                 st.error(f"Interval ratio error: {e}")
