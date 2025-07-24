@@ -93,7 +93,7 @@ def compute_auc_ratios(auc_sum_df, intervals, numer_idx, denom_idx, threshold):
 # --- Streamlit App --- #
 
 st.set_page_config(layout="wide")
-st.title("\U0001F52C Advanced Time‑Series Analysis App")
+st.title("\U0001F52C Islet Analysis")
 
 with st.sidebar:
     st.header("⚙️ Analysis Controls")
