@@ -4,7 +4,6 @@ import numpy as np
 import io
 
 # --- Backend Functions --- #
-# (All your functions from before are here, unchanged)
 
 def normalize_data(df):
     st.write("Normalizing data...")
@@ -57,38 +56,40 @@ def analyse_intervals(df, cut_pts):
         s = c + dt
     if not time.empty:
         intervals.append((s, time.iloc[-1]))
-
     auc_tables, auc_sums, amp_sums, meta_rows = {}, [], [], []
     for (a, b) in intervals:
-        if a >= b:
-            continue
+        if a >= b: continue
         st.info(f"\U0001F4D0 Processing interval: {a}–{b}")
         auc_df, auc_sum, amp_vals, meta = compute_interval_metrics(time, data, a, b, dt)
         tag = f"{int(a)}-{int(b)}"
         auc_tables[tag] = auc_df
         auc_sum.name, amp_vals.name = tag, tag
-        auc_sums.append(auc_sum)
-        amp_sums.append(amp_vals)
+        auc_sums.append(auc_sum); amp_sums.append(amp_vals)
         meta_rows.append(pd.Series(meta, name=tag))
-
     df_auc_sums = pd.concat(auc_sums, axis=1).T if auc_sums else pd.DataFrame()
     df_amp_sums = pd.concat(amp_sums, axis=1).T if amp_sums else pd.DataFrame()
     df_meta = pd.DataFrame(meta_rows) if meta_rows else pd.DataFrame()
-
     return auc_tables, df_auc_sums, df_amp_sums, df_meta, intervals
 
 def compute_max_ratios(df, intervals, numer_idx, denom_idx, threshold):
-    time = df.iloc[:, 0]
-    data = df.iloc[:, 1:]
-    sn, en = intervals[numer_idx]
-    sd, ed = intervals[denom_idx]
+    time = df.iloc[:, 0]; data = df.iloc[:, 1:]
+    sn, en = intervals[numer_idx]; sd, ed = intervals[denom_idx]
     mask_n = (time >= sn) & (time <= en)
     mask_d = (time >= sd) & (time <= ed)
-    max_n = data[mask_n].max()
-    max_d = data[mask_d].max()
+    max_n = data[mask_n].max(); max_d = data[mask_d].max()
     ratio = max_n / max_d
     highlight = ratio > threshold
     return max_n, max_d, ratio, highlight
+
+# NEW: Function to compute AUC ratios
+def compute_auc_ratios(auc_sum_df, intervals, numer_idx, denom_idx, threshold):
+    tag_n = f"{int(intervals[numer_idx][0])}-{int(intervals[numer_idx][1])}"
+    tag_d = f"{int(intervals[denom_idx][0])}-{int(intervals[denom_idx][1])}"
+    auc_n = auc_sum_df.loc[tag_n]
+    auc_d = auc_sum_df.loc[tag_d]
+    ratio = auc_n / auc_d
+    highlight = ratio > threshold
+    return auc_n, auc_d, ratio, highlight
 
 # --- Streamlit App --- #
 
@@ -101,147 +102,125 @@ with st.sidebar:
     uploaded_file = st.file_uploader("\U0001F4C2 Upload your Excel file", type=["xlsx"])
     cuts_input = st.text_input("✂️ Enter Time Cuts (comma‑separated)", "1230")
     apply_norm = st.toggle("Apply Normalization", value=False)
-    # This toggle now ONLY controls the advanced ratio feature
-    run_interval_analysis = st.toggle("Enable Interval Ratio Analysis", value=False)
+    
     st.markdown("---")
-    st.subheader("\U0001F4CA Interval Ratio Analysis")
-    threshold = st.number_input("\U0001F53A Highlight Threshold for Max Ratio", min_value=0.1, value=1.18, step=0.01)
+    st.subheader("\U0001F4CA Max Point Ratio Analysis")
+    run_max_ratio_analysis = st.toggle("Enable Max Ratio Analysis", value=False)
+    max_threshold = st.number_input("\U0001F53A Highlight Threshold", min_value=0.1, value=1.18, step=0.01, key='max_thresh')
+
+    # NEW: UI for AUC Ratio Analysis
+    st.markdown("---")
+    st.subheader("📊 AUC Ratio Analysis")
+    run_auc_ratio_analysis = st.toggle("Enable AUC Ratio Analysis", value=False)
+    auc_threshold = st.number_input("\U0001F53A Highlight Threshold", min_value=0.1, value=1.5, step=0.01, key='auc_thresh')
 
 if uploaded_file is not None:
     try:
-        # --- Data Loading (Unchanged) ---
+        # Data Loading
         if analysis_mode == 'Single File Analysis':
             df_raw = pd.read_excel(uploaded_file, engine='openpyxl')
             base_df = df_raw
-        else: # Ratio Analysis
-            xls = pd.ExcelFile(uploaded_file)
-            if len(xls.sheet_names) < 2:
-                st.error("\u274C Ratio mode requires at least two sheets.")
-                st.stop()
-            df1 = pd.read_excel(xls, 0)
-            df2 = pd.read_excel(xls, 1)
+        else:
+            xls = pd.ExcelFile(uploaded_file); df1 = pd.read_excel(xls, 0); df2 = pd.read_excel(xls, 1)
+            if len(xls.sheet_names) < 2: st.error("\u274C Ratio mode requires two sheets."); st.stop()
             time_col = df1.iloc[:, 0]; d1 = df1.iloc[:, 1:]; d2 = df2.iloc[:, 1:]
-            d2.columns = d1.columns
-            base_df = pd.concat([time_col, d1 / d2], axis=1)
+            d2.columns = d1.columns; base_df = pd.concat([time_col, d1 / d2], axis=1)
 
         analysis_df = normalize_data(base_df) if apply_norm else base_df
-        label = f"{'Normalized' if apply_norm else 'Original'} {'Ratio Data' if analysis_mode != 'Single File Analysis' else 'Data'}"
-        st.header(f"Data for Analysis: {label}")
-        st.dataframe(analysis_df.head())
-        
-        # --- CORRECTED LOGIC STARTS HERE ---
+        label = f"{'Normalized' if apply_norm else 'Original'} {'Ratio Data' if 'df1' in locals() else 'Data'}"
+        st.header(f"Data for Analysis: {label}"); st.dataframe(analysis_df.head())
 
-        # 1. Initialize all possible result variables as empty
-        auc_tbls = {}
-        auc_sum_df, amp_df, meta_df = pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
-        max_ratio_df, a_auc_df, a_amp_df = pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
-        a_auc_per_min_df, a_amp_per_min_df = pd.DataFrame(), pd.DataFrame()
-        numerator_interval, denominator_interval = None, None
-        
-        # 2. Always run the core AUC/Amplitude analysis if cuts are provided
+        # Initialize all result variables
+        max_ratio_df, auc_ratio_df = pd.DataFrame(), pd.DataFrame()
+        a_auc_df, a_amp_df, a_auc_per_min_df, a_amp_per_min_df = pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+        max_numer_interval, max_denom_interval = None, None
+        auc_numer_interval, auc_denom_interval = None, None
+
+        # Core Interval Analysis (always runs if cuts are provided)
         cuts = [int(c.strip()) for c in cuts_input.split(',') if c.strip().isdigit()]
-        if cuts:
-            st.info("Running core AUC and Amplitude analysis...")
-            auc_tbls, auc_sum_df, amp_df, meta_df, intervals = analyse_intervals(analysis_df, cuts)
-        else:
-            intervals = []
-            st.warning("No time cuts entered. Core analysis will be skipped.")
+        auc_tbls, auc_sum_df, amp_df, meta_df, intervals = analyse_intervals(analysis_df, cuts) if cuts else ({}, pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), [])
 
-        # 3. ONLY run the advanced analysis if the toggle is ON and core analysis has run
-        if run_interval_analysis and intervals:
-            st.info("Running advanced Interval Ratio analysis...")
-            interval_labels = [f"Interval {i+1}: {a}–{b}" for i, (a, b) in enumerate(intervals)]
-            idx_map = {lbl: i for i, lbl in enumerate(interval_labels)}
-            
-            if len(interval_labels) >= 2:
-                st.sidebar.subheader("\U0001F501 Choose Intervals for Max Ratio")
-                numerator_interval = st.sidebar.selectbox("Numerator Interval", interval_labels, index=0)
-                denominator_interval = st.sidebar.selectbox("Denominator Interval", interval_labels, index=1)
+        interval_labels = [f"Interval {i+1}: {a}–{b}" for i, (a, b) in enumerate(intervals)]
+        idx_map = {lbl: i for i, lbl in enumerate(interval_labels)}
 
-                if numerator_interval and denominator_interval:
-                    n_idx, d_idx = idx_map[numerator_interval], idx_map[denominator_interval]
-                    m_n, m_d, ratio, mask = compute_max_ratios(analysis_df, intervals, n_idx, d_idx, threshold)
-                    max_ratio_df = pd.DataFrame({"Numerator Max": m_n, "Denominator Max": m_d, "Max Ratio": ratio, "Flagged": mask})
-                    flagged_cols = ratio[mask].index.tolist()
-                    if flagged_cols:
-                        sub_df = analysis_df[[analysis_df.columns[0]] + flagged_cols]
-                        _, a_auc_df, a_amp_df, a_meta_df, _ = analyse_intervals(sub_df, cuts)
-                        a_auc_per_min_df = a_meta_df[['Average_AUC_per_min']]
-                        a_amp_per_min_df = a_meta_df[['Avg_Amplitude_per_min']]
+        # Max Ratio Analysis Logic
+        if run_max_ratio_analysis and len(interval_labels) >= 2:
+            st.sidebar.subheader("\U0001F501 Max Ratio Intervals")
+            max_numer_interval = st.sidebar.selectbox("Numerator", interval_labels, index=0, key='max_num')
+            max_denom_interval = st.sidebar.selectbox("Denominator", interval_labels, index=1, key='max_den')
+            if max_numer_interval and max_denom_interval:
+                m_n, m_d, ratio, mask = compute_max_ratios(analysis_df, intervals, idx_map[max_numer_interval], idx_map[max_denom_interval], max_threshold)
+                # MODIFIED: Create and Transpose (.T) the DataFrame for horizontal layout
+                max_ratio_df = pd.DataFrame({"Numerator Max": m_n, "Denominator Max": m_d, "Max Ratio": ratio, "Flagged": mask}).T
+
+        # NEW: AUC Ratio Analysis Logic
+        if run_auc_ratio_analysis and len(interval_labels) >= 2:
+            st.sidebar.subheader("\U0001F501 AUC Ratio Intervals")
+            auc_numer_interval = st.sidebar.selectbox("Numerator", interval_labels, index=0, key='auc_num')
+            auc_denom_interval = st.sidebar.selectbox("Denominator", interval_labels, index=1, key='auc_den')
+            if auc_numer_interval and auc_denom_interval:
+                auc_n, auc_d, ratio, mask = compute_auc_ratios(auc_sum_df, intervals, idx_map[auc_numer_interval], idx_map[auc_denom_interval], auc_threshold)
+                # MODIFIED: Create and Transpose (.T) the DataFrame for horizontal layout
+                auc_ratio_df = pd.DataFrame({"Numerator AUC": auc_n, "Denominator AUC": auc_d, "AUC Ratio": ratio, "Flagged": mask}).T
+
+        # "A-Cell" Analysis Logic (runs on flagged columns from max ratio)
+        if not max_ratio_df.empty and 'Flagged' in max_ratio_df.index:
+            flagged_cols = max_ratio_df.columns[max_ratio_df.loc['Flagged'] == True].tolist()
+            if flagged_cols:
+                sub_df = analysis_df[[analysis_df.columns[0]] + flagged_cols]
+                _, a_auc_df, a_amp_df, a_meta_df, _ = analyse_intervals(sub_df, cuts)
+                if not a_meta_df.empty:
+                    a_auc_per_min_df = a_meta_df[['Average_AUC_per_min']]
+                    a_amp_per_min_df = a_meta_df[['Avg_Amplitude_per_min']]
 
         st.success("\u2705 Analysis complete!")
 
-        # --- EXCEL OUTPUT LOGIC (This part is now robust) ---
+        # --- Excel Output ---
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-            # Setup the sheets (same as your corrected version)
+            # Setup sheets based on mode
             if analysis_mode == 'Single File Analysis':
-                sh_name = "Processed_Data"
-                ws = writer.book.add_worksheet(sh_name)
-                writer.sheets[sh_name] = ws
-                r = 0
-                ws.write(r, 0, "Original Data"); r += 1
-                df_raw.to_excel(writer, sheet_name=sh_name, startrow=r, index=False)
-                r += len(df_raw) + 3
-                if apply_norm:
-                    ws.write(r, 0, "Normalized Data"); r += 1
-                    analysis_df.to_excel(writer, sheet_name=sh_name, startrow=r, index=False)
-                    r += len(analysis_df) + 3
-            else: 
-                ws_raw = writer.book.add_worksheet("Raw_Data")
-                ws_raw.write(0, 0, "Raw Data - Sheet 1"); df1.to_excel(writer, sheet_name="Raw_Data", startrow=1, index=False)
+                sh_name = "Processed_Data"; ws = writer.book.add_worksheet(sh_name); r = 0
+                ws.write(r, 0, "Original Data"); r += 1; df_raw.to_excel(writer, sheet_name=sh_name, startrow=r, index=False); r += len(df_raw) + 3
+                if apply_norm: ws.write(r, 0, "Normalized Data"); r += 1; analysis_df.to_excel(writer, sheet_name=sh_name, startrow=r, index=False); r += len(analysis_df) + 3
+            else:
+                ws_raw = writer.book.add_worksheet("Raw_Data"); ws_raw.write(0, 0, "Raw Data - Sheet 1"); df1.to_excel(writer, sheet_name="Raw_Data", startrow=1, index=False)
                 ws_raw.write(len(df1) + 3, 0, "Raw Data - Sheet 2"); df2.to_excel(writer, sheet_name="Raw_Data", startrow=len(df1) + 4, index=False)
-                sh_name = "Processed_Data"
-                ws = writer.book.add_worksheet(sh_name)
-                writer.sheets[sh_name] = ws
-                r = 0
-                ws.write(r, 0, label); r += 1
-                analysis_df.to_excel(writer, sheet_name=sh_name, startrow=r, index=False)
-                r += len(analysis_df) + 3
+                sh_name = "Processed_Data"; ws = writer.book.add_worksheet(sh_name); r = 0
+                ws.write(r, 0, label); r += 1; analysis_df.to_excel(writer, sheet_name=sh_name, startrow=r, index=False); r += len(analysis_df) + 3
 
-            # Write advanced ratio table if it exists
-            if not max_ratio_df.empty:
-                ws.write(r, 0, f"Max Ratio Table: {numerator_interval} \u00F7 {denominator_interval}"); r += 1
-                max_ratio_df.to_excel(writer, sheet_name=sh_name, startrow=r, index=True)
+            # Function to write transposed table with formatting
+            def write_transposed_ratio_table(df, title, threshold_val, start_row):
+                ws.write(start_row, 0, title); start_row += 1
+                df.to_excel(writer, sheet_name=sh_name, startrow=start_row, index=True)
                 fmt = writer.book.add_format({'bg_color': '#FFC7CE', 'font_color': '#9C0006'})
-                col_idx = list(max_ratio_df.columns).index("Max Ratio")
-                ws.conditional_format(r + 1, col_idx + 1, r + len(max_ratio_df), col_idx + 1, {'type': 'cell', 'criteria': '>', 'value': threshold, 'format': fmt})
-                r += len(max_ratio_df) + 3
+                ratio_row_name = [idx for idx in df.index if "Ratio" in idx][0]
+                ratio_row_idx = list(df.index).index(ratio_row_name)
+                ws.conditional_format(start_row + ratio_row_idx + 1, 1, start_row + ratio_row_idx + 1, len(df.columns),
+                                      {'type': 'cell', 'criteria': '>', 'value': threshold_val, 'format': fmt})
+                return start_row + len(df) + 3
 
-            # Write core interval analysis if it exists
+            # Write ratio tables if they exist
+            if not max_ratio_df.empty:
+                r = write_transposed_ratio_table(max_ratio_df, f"Max Ratio Table: {max_numer_interval} \u00F7 {max_denom_interval}", max_threshold, r)
+            if not auc_ratio_df.empty:
+                r = write_transposed_ratio_table(auc_ratio_df, f"AUC Ratio Table: {auc_numer_interval} \u00F7 {auc_denom_interval}", auc_threshold, r)
+
+            # Write detailed interval results
             if auc_tbls:
                 for idx, (tag, auc_df_int) in enumerate(auc_tbls.items(), start=1):
-                    ws.write(r, 0, f"AUC Data - Interval {idx} ({tag})"); r += 1
-                    auc_df_int.rename(columns={'Time Start': 'Time'}).drop(columns=['Time End'], errors='ignore').to_excel(writer, sheet_name=sh_name, startrow=r, index=False)
-                    r += len(auc_df_int) + 3
-                    ws.write(r, 0, f"AUC Sums - Interval {idx}"); r += 1
-                    auc_sum_df.loc[tag:tag].to_excel(writer, sheet_name=sh_name, startrow=r); r += 3
-                    ws.write(r, 0, f"AUC Average - Interval {idx}"); r += 1; ws.write(r, 0, meta_df.loc[tag, 'Average_AUC']); r += 2
-                    ws.write(r, 0, f"AUC per Minute - Interval {idx}"); r += 1; ws.write(r, 0, meta_df.loc[tag, 'Average_AUC_per_min']); r += 2
-                    ws.write(r, 0, f"Amplitude - Interval {idx}"); r += 1
-                    amp_df.loc[tag:tag].to_excel(writer, sheet_name=sh_name, startrow=r); r += 3
-                    ws.write(r, 0, f"Average Amplitude - Interval {idx}"); r += 1; ws.write(r, 0, meta_df.loc[tag, 'Average_Amplitude']); r += 2
-                    ws.write(r, 0, f"Amp per Minute - Interval {idx}"); r += 1; ws.write(r, 0, meta_df.loc[tag, 'Avg_Amplitude_per_min']); r += 3
-            
-            # Write A-Cell analysis if it exists
+                    ws.write(r, 0, f"AUC Data - Interval {idx} ({tag})"); r += 1; auc_df_int.rename(columns={'Time Start': 'Time'}).drop(columns=['Time End'], errors='ignore').to_excel(writer, sheet_name=sh_name, startrow=r, index=False); r += len(auc_df_int) + 3
+                    ws.write(r, 0, f"AUC Sums - Interval {idx}"); r += 1; auc_sum_df.loc[tag:tag].to_excel(writer, sheet_name=sh_name, startrow=r); r += 3
+                    ws.write(r, 0, f"Amplitude - Interval {idx}"); r += 1; amp_df.loc[tag:tag].to_excel(writer, sheet_name=sh_name, startrow=r); r += 3
+
+            # Write A-Cell analysis
             if not a_auc_df.empty:
-                r += 1
-                ws.write(r, 0, "A‑Cell AUC Data"); r += 1
-                a_auc_df.to_excel(writer, sheet_name=sh_name, startrow=r, index=True); r += len(a_auc_df) + 2
-                ws.write(r, 0, "A‑Cell Amplitude Data"); r += 1
-                a_amp_df.to_excel(writer, sheet_name=sh_name, startrow=r, index=True); r += len(a_amp_df) + 2
-                ws.write(r, 0, "A‑Cell AUC per Minute"); r += 1
-                a_auc_per_min_df.to_excel(writer, sheet_name=sh_name, startrow=r, index=True); r += len(a_auc_per_min_df) + 2
-                ws.write(r, 0, "A‑Cell Amplitude per Minute"); r += 1
-                a_amp_per_min_df.to_excel(writer, sheet_name=sh_name, startrow=r, index=True); r += len(a_amp_per_min_df) + 2
+                r += 1; ws.write(r, 0, "A‑Cell AUC Sums"); r += 1; a_auc_df.to_excel(writer, sheet_name=sh_name, startrow=r, index=True); r += len(a_auc_df) + 2
+                ws.write(r, 0, "A‑Cell Amplitudes"); r += 1; a_amp_df.to_excel(writer, sheet_name=sh_name, startrow=r, index=True); r += len(a_amp_df) + 2
+                ws.write(r, 0, "A‑Cell AUC per Minute"); r += 1; a_auc_per_min_df.to_excel(writer, sheet_name=sh_name, startrow=r, index=True); r += len(a_auc_per_min_df) + 2
+                ws.write(r, 0, "A‑Cell Amp per Minute"); r += 1; a_amp_per_min_df.to_excel(writer, sheet_name=sh_name, startrow=r, index=True); r += len(a_amp_per_min_df) + 2
 
-        st.download_button(
-            label="\U0001F4E5 Download Analysis Excel File",
-            data=output.getvalue(),
-            file_name="complete_analysis.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-
+        st.download_button(label="\U0001F4E5 Download Analysis Excel File", data=output.getvalue(), file_name="complete_analysis.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     except Exception as e:
         st.error(f"\u26D4 Error: {e}")
         st.warning("Double check your uploads, time cuts, and interval selections.")
