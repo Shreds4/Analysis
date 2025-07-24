@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import io
 
-# --- Backend Functions --- #
+# --- Backend Functions (No changes in this section) --- #
 
 def normalize_data(df):
     st.write("Normalizing data...")
@@ -81,7 +81,6 @@ def compute_max_ratios(df, intervals, numer_idx, denom_idx, threshold):
     highlight = ratio > threshold
     return max_n, max_d, ratio, highlight
 
-# NEW: Function to compute AUC ratios
 def compute_auc_ratios(auc_sum_df, intervals, numer_idx, denom_idx, threshold):
     tag_n = f"{int(intervals[numer_idx][0])}-{int(intervals[numer_idx][1])}"
     tag_d = f"{int(intervals[denom_idx][0])}-{int(intervals[denom_idx][1])}"
@@ -104,11 +103,12 @@ with st.sidebar:
     apply_norm = st.toggle("Apply Normalization", value=False)
     
     st.markdown("---")
-    st.subheader("\U0001F4CA Max Point Ratio Analysis")
-    run_max_ratio_analysis = st.toggle("Enable Max Ratio Analysis", value=False)
+    # MODIFIED: Renamed this section header
+    st.subheader("\U0001F4CA Cell Sorting Using Max Point Ratio")
+    # MODIFIED: Updated the toggle label for consistency
+    run_max_ratio_analysis = st.toggle("Enable Cell Sorting", value=False)
     max_threshold = st.number_input("\U0001F53A Highlight Threshold", min_value=0.1, value=1.18, step=0.01, key='max_thresh')
 
-    # NEW: UI for AUC Ratio Analysis
     st.markdown("---")
     st.subheader("📊 AUC Ratio Analysis")
     run_auc_ratio_analysis = st.toggle("Enable AUC Ratio Analysis", value=False)
@@ -145,22 +145,20 @@ if uploaded_file is not None:
 
         # Max Ratio Analysis Logic
         if run_max_ratio_analysis and len(interval_labels) >= 2:
-            st.sidebar.subheader("\U0001F501 Max Ratio Intervals")
+            st.sidebar.subheader("\U0001F501 Cell Sorting Intervals")
             max_numer_interval = st.sidebar.selectbox("Numerator", interval_labels, index=0, key='max_num')
             max_denom_interval = st.sidebar.selectbox("Denominator", interval_labels, index=1, key='max_den')
             if max_numer_interval and max_denom_interval:
                 m_n, m_d, ratio, mask = compute_max_ratios(analysis_df, intervals, idx_map[max_numer_interval], idx_map[max_denom_interval], max_threshold)
-                # MODIFIED: Create and Transpose (.T) the DataFrame for horizontal layout
                 max_ratio_df = pd.DataFrame({"Numerator Max": m_n, "Denominator Max": m_d, "Max Ratio": ratio, "Flagged": mask}).T
 
-        # NEW: AUC Ratio Analysis Logic
+        # AUC Ratio Analysis Logic
         if run_auc_ratio_analysis and len(interval_labels) >= 2:
             st.sidebar.subheader("\U0001F501 AUC Ratio Intervals")
             auc_numer_interval = st.sidebar.selectbox("Numerator", interval_labels, index=0, key='auc_num')
             auc_denom_interval = st.sidebar.selectbox("Denominator", interval_labels, index=1, key='auc_den')
             if auc_numer_interval and auc_denom_interval:
                 auc_n, auc_d, ratio, mask = compute_auc_ratios(auc_sum_df, intervals, idx_map[auc_numer_interval], idx_map[auc_denom_interval], auc_threshold)
-                # MODIFIED: Create and Transpose (.T) the DataFrame for horizontal layout
                 auc_ratio_df = pd.DataFrame({"Numerator AUC": auc_n, "Denominator AUC": auc_d, "AUC Ratio": ratio, "Flagged": mask}).T
 
         # "A-Cell" Analysis Logic (runs on flagged columns from max ratio)
@@ -189,20 +187,21 @@ if uploaded_file is not None:
                 sh_name = "Processed_Data"; ws = writer.book.add_worksheet(sh_name); r = 0
                 ws.write(r, 0, label); r += 1; analysis_df.to_excel(writer, sheet_name=sh_name, startrow=r, index=False); r += len(analysis_df) + 3
 
-            # Function to write transposed table with formatting
             def write_transposed_ratio_table(df, title, threshold_val, start_row):
                 ws.write(start_row, 0, title); start_row += 1
                 df.to_excel(writer, sheet_name=sh_name, startrow=start_row, index=True)
                 fmt = writer.book.add_format({'bg_color': '#FFC7CE', 'font_color': '#9C0006'})
                 ratio_row_name = [idx for idx in df.index if "Ratio" in idx][0]
                 ratio_row_idx = list(df.index).index(ratio_row_name)
-                ws.conditional_format(start_row + ratio_row_idx + 1, 1, start_row + ratio_row_idx + 1, len(df.columns),
+                ws.conditional_format(start_row + ratio_row_idx, 1, start_row + ratio_row_idx, len(df.columns),
                                       {'type': 'cell', 'criteria': '>', 'value': threshold_val, 'format': fmt})
                 return start_row + len(df) + 3
 
             # Write ratio tables if they exist
             if not max_ratio_df.empty:
-                r = write_transposed_ratio_table(max_ratio_df, f"Max Ratio Table: {max_numer_interval} \u00F7 {max_denom_interval}", max_threshold, r)
+                # MODIFIED: Updated the title for the Excel export
+                title = f"Cell Sorting (Max Ratio) Table: {max_numer_interval} \u00F7 {max_denom_interval}"
+                r = write_transposed_ratio_table(max_ratio_df, title, max_threshold, r)
             if not auc_ratio_df.empty:
                 r = write_transposed_ratio_table(auc_ratio_df, f"AUC Ratio Table: {auc_numer_interval} \u00F7 {auc_denom_interval}", auc_threshold, r)
 
@@ -223,4 +222,4 @@ if uploaded_file is not None:
         st.download_button(label="\U0001F4E5 Download Analysis Excel File", data=output.getvalue(), file_name="complete_analysis.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     except Exception as e:
         st.error(f"\u26D4 Error: {e}")
-        st.warning("Double check your uploads, time cuts, and interval selections.")
+        st.warning("Double check your uploads, time cuts, and interval selections.")```
