@@ -103,7 +103,7 @@ with st.sidebar:
     apply_norm = st.toggle("Apply Normalization", value=False)
     
     # NEW: Toggle for displaying the detailed calculations
-    display_detailed_calcs = st.toggle("Display Detailed Interval Calculations", value=True, help="If OFF, the final Excel file will not contain the detailed breakdown for each interval.")
+    display_detailed_calcs = st.toggle("Show AUC and Amplitude per interval", value=True, help="If OFF, the final Excel file will not contain the detailed breakdown for each interval.")
     
     st.markdown("---")
     st.subheader("\U0001F4CA Cell Sorting Using Max Point Ratio")
