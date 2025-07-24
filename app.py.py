@@ -102,6 +102,9 @@ with st.sidebar:
     cuts_input = st.text_input("✂️ Enter Time Cuts (comma‑separated)", "1230")
     apply_norm = st.toggle("Apply Normalization", value=False)
     
+    # NEW: Toggle for displaying the detailed calculations
+    display_detailed_calcs = st.toggle("Display Detailed Interval Calculations", value=True, help="If OFF, the final Excel file will not contain the detailed breakdown for each interval.")
+    
     st.markdown("---")
     st.subheader("\U0001F4CA Cell Sorting Using Max Point Ratio")
     run_max_ratio_analysis = st.toggle("Enable Cell Sorting", value=False)
@@ -185,18 +188,14 @@ if uploaded_file is not None:
                 sh_name = "Processed_Data"; ws = writer.book.add_worksheet(sh_name); r = 0
                 ws.write(r, 0, label); r += 1; analysis_df.to_excel(writer, sheet_name=sh_name, startrow=r, index=False); r += len(analysis_df) + 3
 
-            # MODIFIED: Function to write transposed table with CORRECT highlighting
             def write_transposed_ratio_table(df, title, threshold_val, start_row):
                 ws.write(start_row, 0, title); start_row += 1
                 df.to_excel(writer, sheet_name=sh_name, startrow=start_row, index=True)
                 fmt = writer.book.add_format({'bg_color': '#FFC7CE', 'font_color': '#9C0006'})
-                # Find the specific "Ratio" row name to target it
                 ratio_row_name = [idx for idx in df.index if "Ratio" in idx][0]
                 ratio_row_idx = list(df.index).index(ratio_row_name)
-                # The actual row in excel is offset by the title (1) and the header (1)
                 excel_row = start_row + 1 + ratio_row_idx
-                ws.conditional_format(excel_row, 1, excel_row, len(df.columns),
-                                      {'type': 'cell', 'criteria': '>', 'value': threshold_val, 'format': fmt})
+                ws.conditional_format(excel_row, 1, excel_row, len(df.columns), {'type': 'cell', 'criteria': '>', 'value': threshold_val, 'format': fmt})
                 return start_row + len(df) + 3
 
             # Write ratio tables if they exist
@@ -206,19 +205,14 @@ if uploaded_file is not None:
             if not auc_ratio_df.empty:
                 r = write_transposed_ratio_table(auc_ratio_df, f"AUC Ratio Table: {auc_numer_interval} \u00F7 {auc_denom_interval}", auc_threshold, r)
 
-            # Write detailed interval results
-            if auc_tbls:
+            # MODIFIED: This entire block is now conditional on the new toggle
+            if auc_tbls and display_detailed_calcs:
                 for idx, (tag, auc_df_int) in enumerate(auc_tbls.items(), start=1):
                     ws.write(r, 0, f"AUC Data - Interval {idx} ({tag})"); r += 1; auc_df_int.rename(columns={'Time Start': 'Time'}).drop(columns=['Time End'], errors='ignore').to_excel(writer, sheet_name=sh_name, startrow=r, index=False); r += len(auc_df_int) + 3
                     ws.write(r, 0, f"AUC Sums - Interval {idx}"); r += 1; auc_sum_df.loc[tag:tag].to_excel(writer, sheet_name=sh_name, startrow=r); r += 3
-                    
-                    # RE-ADDED: The missing average calculations for each interval
                     ws.write(r, 0, f"AUC Average - Interval {idx}"); r+=1; ws.write(r, 0, meta_df.loc[tag, 'Average_AUC']); r += 2
                     ws.write(r, 0, f"AUC per Minute - Interval {idx}"); r+=1; ws.write(r, 0, meta_df.loc[tag, 'Average_AUC_per_min']); r += 2
-                    
                     ws.write(r, 0, f"Amplitude - Interval {idx}"); r += 1; amp_df.loc[tag:tag].to_excel(writer, sheet_name=sh_name, startrow=r); r += 3
-                    
-                    # RE-ADDED: The missing average calculations for each interval
                     ws.write(r, 0, f"Average Amplitude - Interval {idx}"); r+=1; ws.write(r, 0, meta_df.loc[tag, 'Average_Amplitude']); r += 2
                     ws.write(r, 0, f"Avg Amplitude per Minute - Interval {idx}"); r+=1; ws.write(r, 0, meta_df.loc[tag, 'Avg_Amplitude_per_min']); r += 3
 
