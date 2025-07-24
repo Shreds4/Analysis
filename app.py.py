@@ -103,9 +103,7 @@ with st.sidebar:
     apply_norm = st.toggle("Apply Normalization", value=False)
     
     st.markdown("---")
-    # MODIFIED: Renamed this section header
     st.subheader("\U0001F4CA Cell Sorting Using Max Point Ratio")
-    # MODIFIED: Updated the toggle label for consistency
     run_max_ratio_analysis = st.toggle("Enable Cell Sorting", value=False)
     max_threshold = st.number_input("\U0001F53A Highlight Threshold", min_value=0.1, value=1.18, step=0.01, key='max_thresh')
 
@@ -199,7 +197,6 @@ if uploaded_file is not None:
 
             # Write ratio tables if they exist
             if not max_ratio_df.empty:
-                # MODIFIED: Updated the title for the Excel export
                 title = f"Cell Sorting (Max Ratio) Table: {max_numer_interval} \u00F7 {max_denom_interval}"
                 r = write_transposed_ratio_table(max_ratio_df, title, max_threshold, r)
             if not auc_ratio_df.empty:
@@ -220,6 +217,8 @@ if uploaded_file is not None:
                 ws.write(r, 0, "A‑Cell Amp per Minute"); r += 1; a_amp_per_min_df.to_excel(writer, sheet_name=sh_name, startrow=r, index=True); r += len(a_amp_per_min_df) + 2
 
         st.download_button(label="\U0001F4E5 Download Analysis Excel File", data=output.getvalue(), file_name="complete_analysis.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    
     except Exception as e:
         st.error(f"\u26D4 Error: {e}")
-        st.warning("Double check your uploads, time cuts, and interval selections.")```
+        # CORRECTED LINE: The extra backtick at the end has been removed.
+        st.warning("Double check your uploads, time cuts, and interval selections.")
